@@ -12,6 +12,18 @@ from ctypes import wintypes
 user32 = ctypes.windll.user32
 user32.SetProcessDPIAware()
 
+# Get system DPI scaling factor
+def get_dpi_scale():
+    """Get the system DPI scaling factor."""
+    try:
+        # Get DPI for the primary monitor
+        hdc = user32.GetDC(0)
+        dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)  # LOGPIXELSX
+        user32.ReleaseDC(0, hdc)
+        return dpi / 96.0  # 96 DPI is 100% scaling
+    except:
+        return 1.0
+
 
 # The distance between the top of the minimap and the top of the screen
 MINIMAP_TOP_BORDER = 5
@@ -52,11 +64,17 @@ class Capture:
         self.minimap_ratio = 1
         self.minimap_sample = None
         self.sct = None
+        
+        # Get DPI scaling and adjust default window size
+        self.dpi_scale = get_dpi_scale()
+        print(f'[~] Detected DPI scaling: {self.dpi_scale:.2f}x')
+        
+        # Start with a larger default window size for high-res displays
         self.window = {
             'left': 0,
             'top': 0,
-            'width': 1366,
-            'height': 768
+            'width': 3440,  # Support ultrawide monitors
+            'height': 1440
         }
 
         self.ready = False
@@ -92,8 +110,15 @@ class Capture:
                 self.frame = self.screenshot()
             if self.frame is None:
                 continue
+                
+            print(f'[~] Calibrating minimap detection on {self.window["width"]}x{self.window["height"]} window')
+            print(f'[~] Template sizes - TL: {MM_TL_TEMPLATE.shape}, BR: {MM_BR_TEMPLATE.shape}, Player: {PLAYER_TEMPLATE.shape}')
+            
             tl, _ = utils.single_match(self.frame, MM_TL_TEMPLATE)
             _, br = utils.single_match(self.frame, MM_BR_TEMPLATE)
+            
+            print(f'[~] Found minimap corners - TL: {tl}, BR: {br}')
+            
             mm_tl = (
                 tl[0] + MINIMAP_BOTTOM_BORDER,
                 tl[1] + MINIMAP_TOP_BORDER
@@ -102,9 +127,17 @@ class Capture:
                 max(mm_tl[0] + PT_WIDTH, br[0] - MINIMAP_BOTTOM_BORDER),
                 max(mm_tl[1] + PT_HEIGHT, br[1] - MINIMAP_BOTTOM_BORDER)
             )
-            self.minimap_ratio = (mm_br[0] - mm_tl[0]) / (mm_br[1] - mm_tl[1])
+            
+            minimap_width = mm_br[0] - mm_tl[0]
+            minimap_height = mm_br[1] - mm_tl[1]
+            print(f'[~] Minimap dimensions: {minimap_width}x{minimap_height}')
+            
+            self.minimap_ratio = minimap_width / minimap_height
+            print(f'[~] Minimap ratio: {self.minimap_ratio:.3f}')
+            
             self.minimap_sample = self.frame[mm_tl[1]:mm_br[1], mm_tl[0]:mm_br[0]]
             self.calibrated = True
+            print('[~] Minimap calibration complete')
 
             with mss.mss() as self.sct:
                 while True:
@@ -119,10 +152,20 @@ class Capture:
                     # Crop the frame to only show the minimap
                     minimap = self.frame[mm_tl[1]:mm_br[1], mm_tl[0]:mm_br[0]]
 
-                    # Determine the player's position
-                    player = utils.multi_match(minimap, PLAYER_TEMPLATE, threshold=0.8)
+                    # Determine the player's position with adaptive threshold
+                    # Lower threshold for high-resolution displays where scaling might affect matching
+                    threshold = 0.6 if self.dpi_scale > 1.5 else 0.8
+                    player = utils.multi_match(minimap, PLAYER_TEMPLATE, threshold=threshold)
                     if player:
                         config.player_pos = utils.convert_to_relative(player[0], minimap)
+                        if len(player) > 1:
+                            print(f'[~] Multiple player markers detected: {len(player)} (using first one)')
+                    else:
+                        # Try with even lower threshold as fallback
+                        player = utils.multi_match(minimap, PLAYER_TEMPLATE, threshold=0.4)
+                        if player:
+                            config.player_pos = utils.convert_to_relative(player[0], minimap)
+                            print(f'[~] Player detected with low confidence threshold')
 
                     # Package display information to be polled by GUI
                     self.minimap = {

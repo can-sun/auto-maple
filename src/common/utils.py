@@ -72,43 +72,124 @@ def separate_args(arguments):
     return args, kwargs
 
 
-def single_match(frame, template):
+def single_match(frame, template, scales=None):
     """
-    Finds the best match within FRAME.
+    Finds the best match within FRAME, optionally trying multiple scales.
     :param frame:       The image in which to search for TEMPLATE.
     :param template:    The template to match with.
+    :param scales:      List of scales to try (e.g., [0.5, 1.0, 1.5, 2.0]).
     :return:            The top-left and bottom-right positions of the best match.
     """
-
+    
+    if scales is None:
+        # Try multiple scales for high-resolution displays
+        scales = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0]
+    
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF)
-    _, _, _, top_left = cv2.minMaxLoc(result)
-    w, h = template.shape[::-1]
+    best_match = None
+    best_val = -float('inf')
+    best_scale = 1.0
+    
+    for scale in scales:
+        # Scale the template
+        if scale != 1.0:
+            new_width = int(template.shape[1] * scale)
+            new_height = int(template.shape[0] * scale)
+            if new_width < 1 or new_height < 1:
+                continue
+            if new_width > gray.shape[1] or new_height > gray.shape[0]:
+                continue
+            scaled_template = cv2.resize(template, (new_width, new_height))
+        else:
+            scaled_template = template
+            
+        # Skip if template is larger than frame
+        if scaled_template.shape[0] > gray.shape[0] or scaled_template.shape[1] > gray.shape[1]:
+            continue
+            
+        result = cv2.matchTemplate(gray, scaled_template, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+        
+        if max_val > best_val:
+            best_val = max_val
+            best_match = max_loc
+            best_scale = scale
+    
+    if best_match is None:
+        # Fallback to original method
+        result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF)
+        _, _, _, top_left = cv2.minMaxLoc(result)
+        w, h = template.shape[::-1]
+        bottom_right = (top_left[0] + w, top_left[1] + h)
+        return top_left, bottom_right
+    
+    # Calculate dimensions with best scale
+    w = int(template.shape[1] * best_scale)
+    h = int(template.shape[0] * best_scale)
+    top_left = best_match
     bottom_right = (top_left[0] + w, top_left[1] + h)
+    
+    print(f'[~] Template matched at scale {best_scale:.2f}x with confidence {best_val:.3f}')
     return top_left, bottom_right
 
 
-def multi_match(frame, template, threshold=0.95):
+def multi_match(frame, template, threshold=0.95, scales=None):
     """
     Finds all matches in FRAME that are similar to TEMPLATE by at least THRESHOLD.
     :param frame:       The image in which to search.
     :param template:    The template to match with.
     :param threshold:   The minimum percentage of TEMPLATE that each result must match.
+    :param scales:      List of scales to try for multi-scale matching.
     :return:            An array of matches that exceed THRESHOLD.
     """
 
-    if template.shape[0] > frame.shape[0] or template.shape[1] > frame.shape[1]:
-        return []
+    if scales is None:
+        # For multi_match, use fewer scales to avoid too many false positives
+        scales = [0.75, 1.0, 1.25, 1.5, 2.0]
+
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
-    locations = np.where(result >= threshold)
-    locations = list(zip(*locations[::-1]))
-    results = []
-    for p in locations:
-        x = int(round(p[0] + template.shape[1] / 2))
-        y = int(round(p[1] + template.shape[0] / 2))
-        results.append((x, y))
-    return results
+    all_results = []
+    
+    for scale in scales:
+        # Scale the template
+        if scale != 1.0:
+            new_width = int(template.shape[1] * scale)
+            new_height = int(template.shape[0] * scale)
+            if new_width < 1 or new_height < 1:
+                continue
+            if new_width > gray.shape[1] or new_height > gray.shape[0]:
+                continue
+            scaled_template = cv2.resize(template, (new_width, new_height))
+        else:
+            scaled_template = template
+            
+        # Skip if template is larger than frame
+        if scaled_template.shape[0] > gray.shape[0] or scaled_template.shape[1] > gray.shape[1]:
+            continue
+            
+        result = cv2.matchTemplate(gray, scaled_template, cv2.TM_CCOEFF_NORMED)
+        locations = np.where(result >= threshold)
+        locations = list(zip(*locations[::-1]))
+        
+        for p in locations:
+            x = int(round(p[0] + scaled_template.shape[1] / 2))
+            y = int(round(p[1] + scaled_template.shape[0] / 2))
+            all_results.append((x, y))
+    
+    # Remove duplicate detections that are too close to each other
+    if len(all_results) > 1:
+        filtered_results = []
+        for result in all_results:
+            is_duplicate = False
+            for existing in filtered_results:
+                if distance(result, existing) < 20:  # 20 pixel threshold
+                    is_duplicate = True
+                    break
+            if not is_duplicate:
+                filtered_results.append(result)
+        return filtered_results
+    
+    return all_results
 
 
 def convert_to_relative(point, frame):
