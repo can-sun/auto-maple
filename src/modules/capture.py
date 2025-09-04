@@ -126,11 +126,29 @@ class Capture:
                 
             print(f'[~] Calibrating minimap detection on {self.window["width"]}x{self.window["height"]} window')
             print(f'[~] Template sizes - TL: {MM_TL_TEMPLATE.shape}, BR: {MM_BR_TEMPLATE.shape}, Player: {PLAYER_TEMPLATE.shape}')
+            print(f'[~] Screenshot shape: {self.frame.shape}')
             
-            tl, _ = utils.single_match(self.frame, MM_TL_TEMPLATE)
-            _, br = utils.single_match(self.frame, MM_BR_TEMPLATE)
+            # Save debug screenshot
+            cv2.imwrite('debug_screenshot.png', self.frame)
+            print('[~] Saved debug_screenshot.png')
             
-            print(f'[~] Found minimap corners - TL: {tl}, BR: {br}')
+            tl, tl_br = utils.single_match(self.frame, MM_TL_TEMPLATE)
+            br_tl, br = utils.single_match(self.frame, MM_BR_TEMPLATE)
+            
+            print(f'[~] Found minimap corners - TL: {tl} to {tl_br}, BR: {br_tl} to {br}')
+            
+            # Validate that the coordinates make sense
+            if tl[0] >= br[0] or tl[1] >= br[1]:
+                print(f'[!] ERROR: Invalid minimap coordinates! TL: {tl}, BR: {br}')
+                print(f'[!] TL should be top-left of BR. Coordinates may be swapped or detection failed.')
+                
+                # Try to save debug images with detection boxes
+                debug_frame = self.frame.copy()
+                cv2.rectangle(debug_frame, tl, tl_br, (0, 255, 0), 2)  # TL in green
+                cv2.rectangle(debug_frame, br_tl, br, (0, 0, 255), 2)  # BR in red
+                cv2.imwrite('debug_detection_failed.png', debug_frame)
+                print('[~] Saved debug_detection_failed.png showing detection boxes')
+                continue
             
             mm_tl = (
                 tl[0] + MINIMAP_BOTTOM_BORDER,
@@ -149,6 +167,19 @@ class Capture:
             print(f'[~] Minimap ratio: {self.minimap_ratio:.3f}')
             
             self.minimap_sample = self.frame[mm_tl[1]:mm_br[1], mm_tl[0]:mm_br[0]]
+            
+            # Save debug images
+            cv2.imwrite('debug_minimap_extracted.png', self.minimap_sample)
+            print(f'[~] Saved debug_minimap_extracted.png (shape: {self.minimap_sample.shape})')
+            
+            # Also save the full screenshot with detection boxes
+            debug_frame = self.frame.copy()
+            cv2.rectangle(debug_frame, tl, tl_br, (0, 255, 0), 2)  # TL template in green
+            cv2.rectangle(debug_frame, br_tl, br, (0, 0, 255), 2)  # BR template in red  
+            cv2.rectangle(debug_frame, mm_tl, mm_br, (255, 0, 0), 2)  # Final minimap bounds in blue
+            cv2.imwrite('debug_detection_boxes.png', debug_frame)
+            print('[~] Saved debug_detection_boxes.png showing all detection boxes')
+            
             self.calibrated = True
             print('[~] Minimap calibration complete')
 
