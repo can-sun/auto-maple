@@ -71,9 +71,9 @@ class Bot(Configurable):
         :return:    None
         """
 
-        print('\n[~] Initializing detection algorithm:\n')
-        model = detection.load_model()
-        print('\n[~] Initialized detection algorithm')
+        # print('\n[~] Initializing detection algorithm:\n')
+        # model = detection.load_model()
+        # print('\n[~] Initialized detection algorithm')
 
         self.ready = True
         config.listener.enabled = True
@@ -96,9 +96,9 @@ class Bot(Configurable):
 
                 # Execute next Point in the routine
                 element = config.routine[config.routine.index]
-                if self.rune_active and isinstance(element, Point) \
-                        and element.location == self.rune_closest_pos:
-                    self._solve_rune(model)
+                # if self.rune_active and isinstance(element, Point) \
+                #         and element.location == self.rune_closest_pos:
+                #     self._solve_rune(model)
                 element.execute()
                 config.routine.step()
             else:

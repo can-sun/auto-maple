@@ -182,7 +182,7 @@ if __name__ == '__main__':
     import mss
     config.enabled = True
     monitor = {'top': 0, 'left': 0, 'width': 1366, 'height': 768}
-    model = load_model()
+    # model = load_model()
     while True:
         with mss.mss() as sct:
             frame = np.array(sct.grab(monitor))
