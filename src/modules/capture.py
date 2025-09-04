@@ -69,12 +69,12 @@ class Capture:
         self.dpi_scale = get_dpi_scale()
         print(f'[~] Detected DPI scaling: {self.dpi_scale:.2f}x')
         
-        # Start with a larger default window size for high-res displays
+        # Default to game's native resolution
         self.window = {
             'left': 0,
             'top': 0,
-            'width': 3440,  # Support ultrawide monitors
-            'height': 1440
+            'width': 1024,
+            'height': 768
         }
 
         self.ready = False
@@ -95,15 +95,28 @@ class Capture:
         while True:
             # Calibrate screen capture
             handle = user32.FindWindowW(None, 'MapleStory')
-            rect = wintypes.RECT()
-            user32.GetWindowRect(handle, ctypes.pointer(rect))
-            rect = (rect.left, rect.top, rect.right, rect.bottom)
-            rect = tuple(max(0, x) for x in rect)
+            if handle:
+                rect = wintypes.RECT()
+                user32.GetWindowRect(handle, ctypes.pointer(rect))
+                rect = (rect.left, rect.top, rect.right, rect.bottom)
+                rect = tuple(max(0, x) for x in rect)
 
-            self.window['left'] = rect[0]
-            self.window['top'] = rect[1]
-            self.window['width'] = max(rect[2] - rect[0], MMT_WIDTH)
-            self.window['height'] = max(rect[3] - rect[1], MMT_HEIGHT)
+                self.window['left'] = rect[0]
+                self.window['top'] = rect[1]
+                self.window['width'] = max(rect[2] - rect[0], MMT_WIDTH)
+                self.window['height'] = max(rect[3] - rect[1], MMT_HEIGHT)
+                
+                print(f'[~] Found MapleStory window at {self.window}')
+                
+                # Verify the window size makes sense for 1024x768 game
+                expected_ratio = 1024 / 768
+                actual_ratio = self.window['width'] / self.window['height']
+                if abs(actual_ratio - expected_ratio) > 0.1:
+                    print(f'[!] Warning: Window aspect ratio {actual_ratio:.3f} differs from expected {expected_ratio:.3f}')
+                    print(f'[!] Game may be scaled or in windowed mode with borders')
+            else:
+                print('[!] MapleStory window not found, using default coordinates')
+                # Keep the default 1024x768 window settings
 
             # Calibrate by finding the top-left and bottom-right corners of the minimap
             with mss.mss() as self.sct:

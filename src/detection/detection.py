@@ -182,10 +182,9 @@ if __name__ == '__main__':
     import mss
     config.enabled = True
     
-    # Auto-detect screen resolution instead of hardcoding
-    with mss.mss() as sct:
-        monitor = sct.monitors[1]  # Primary monitor
-    print(f'[~] Using monitor resolution: {monitor["width"]}x{monitor["height"]}')
+    # Use game's native resolution
+    monitor = {'top': 0, 'left': 0, 'width': 1024, 'height': 768}
+    print(f'[~] Using game resolution: {monitor["width"]}x{monitor["height"]}')
     
     # model = load_model()
     while True:
